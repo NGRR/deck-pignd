@@ -45,12 +45,6 @@
         </div>
 
         <div class="uk-flex uk-flex-middle uk-grid-small" uk-grid>
-          <button id="btnEditText" class="uk-button uk-button-primary uk-button-small" type="button">Editar texto</button>
-          <button id="btnEditDeck" class="uk-button uk-button-primary uk-button-small" type="button">Editar</button>
-          <button id="btnSaveDeck" class="uk-button uk-button-secondary uk-button-small" type="button">Guardar</button>
-          <button id="btnRestoreDeck" class="uk-button uk-button-default uk-button-small" type="button">Restaurar</button>
-          <button id="btnExportDeck" class="uk-button uk-button-default uk-button-small" type="button">Exportar</button>
-          <button id="btnImportDeck" class="uk-button uk-button-default uk-button-small" type="button">Importar</button>
           <button id="btnPrev" class="uk-button uk-button-default uk-button-small" type="button" uk-icon="chevron-left"></button>
           <button id="btnNext" class="uk-button uk-button-default uk-button-small" type="button" uk-icon="chevron-right"></button>
         </div>
@@ -64,6 +58,15 @@
         <progress id="progress" class="uk-progress" value="0" max="100"></progress>
       </footer>
     </main>
+  </div>
+
+  <div class="deck-actions-bottom" role="toolbar" aria-label="Edicion y guardado">
+    <button id="btnEditText" class="uk-button uk-button-primary uk-button-small" type="button">Editar texto</button>
+    <button id="btnEditDeck" class="uk-button uk-button-primary uk-button-small" type="button">Editar JSON</button>
+    <button id="btnSaveDeck" class="uk-button uk-button-secondary uk-button-small" type="button">Guardar</button>
+    <button id="btnRestoreDeck" class="uk-button uk-button-default uk-button-small" type="button">Restaurar</button>
+    <button id="btnExportDeck" class="uk-button uk-button-default uk-button-small" type="button">Exportar</button>
+    <button id="btnImportDeck" class="uk-button uk-button-default uk-button-small" type="button">Importar</button>
   </div>
 
   <input id="fileImportDeck" type="file" accept="application/json" hidden />
