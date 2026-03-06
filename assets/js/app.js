@@ -81,6 +81,7 @@ const btnPrev = document.getElementById("btnPrev");
 const btnNext = document.getElementById("btnNext");
 const btnEditText = document.getElementById("btnEditText");
 const btnEditDeck = document.getElementById("btnEditDeck");
+const btnExportPdf = document.getElementById("btnExportPdf");
 const btnSaveDeck = document.getElementById("btnSaveDeck");
 const btnRestoreDeck = document.getElementById("btnRestoreDeck");
 const btnExportDeck = document.getElementById("btnExportDeck");
@@ -93,6 +94,7 @@ const slideEditorModal = document.getElementById("slideEditorModal");
 const slideEditorForm = document.getElementById("slideEditorForm");
 const fileImportDeck = document.getElementById("fileImportDeck");
 const syncStatus = document.getElementById("syncStatus");
+const printDeck = document.getElementById("printDeck");
 
 elTitle.textContent = currentDeck.title;
 
@@ -1001,6 +1003,38 @@ function exportDeck(){
   URL.revokeObjectURL(url);
 }
 
+function buildPrintDeckHtml(){
+  return currentDeck.slides.map((s, i) => {
+    const tone = i % 2 === 0 ? "tone-primary" : "tone-secondary";
+    return `
+      <article class="print-page">
+        <div class="print-meta">${esc(currentDeck.title || "Deck")} · Lamina ${i + 1} / ${currentDeck.slides.length}</div>
+        <section class="print-stage">
+          <article class="slide-shell ${tone}">${renderSlide(s)}</article>
+        </section>
+      </article>
+    `;
+  }).join("");
+}
+
+function exportPdf(){
+  if (!printDeck) return;
+
+  printDeck.innerHTML = buildPrintDeckHtml();
+  document.body.classList.add("printing");
+
+  const cleanup = () => {
+    document.body.classList.remove("printing");
+    printDeck.innerHTML = "";
+    window.removeEventListener("afterprint", cleanup);
+  };
+
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => {
+    window.print();
+  }, 50);
+}
+
 function importDeckFromFile(file){
   if (!file) return;
   const reader = new FileReader();
@@ -1278,6 +1312,8 @@ btnEditDeck?.addEventListener("click", () => {
   deckEditorTextarea.value = JSON.stringify(currentDeck, null, 2);
   openModal(deckEditorModal);
 });
+
+btnExportPdf?.addEventListener("click", exportPdf);
 
 btnApplyDeckChanges?.addEventListener("click", () => {
   try {

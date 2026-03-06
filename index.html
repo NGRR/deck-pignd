@@ -63,12 +63,15 @@
   <div class="deck-actions-bottom" role="toolbar" aria-label="Edicion y guardado">
     <button id="btnEditText" class="uk-button uk-button-primary uk-button-small" type="button">Editar texto</button>
     <button id="btnEditDeck" class="uk-button uk-button-primary uk-button-small" type="button">Editar JSON</button>
+    <button id="btnExportPdf" class="uk-button uk-button-secondary uk-button-small" type="button">PDF</button>
     <button id="btnSaveDeck" class="uk-button uk-button-secondary uk-button-small" type="button">Guardar</button>
     <button id="btnRestoreDeck" class="uk-button uk-button-default uk-button-small" type="button">Restaurar</button>
     <button id="btnExportDeck" class="uk-button uk-button-default uk-button-small" type="button">Exportar</button>
     <button id="btnImportDeck" class="uk-button uk-button-default uk-button-small" type="button">Importar</button>
     <span id="syncStatus" class="sync-status sync-local">Local</span>
   </div>
+
+  <section id="printDeck" class="print-deck" aria-hidden="true"></section>
 
   <input id="fileImportDeck" type="file" accept="application/json" hidden />
 
