@@ -2,6 +2,13 @@ import { deck } from "./slides.js";
 
 const STORAGE_KEY = "deck_uikit_state_v1";
 const ui = window.UIkit;
+const REMOTE_TIMEOUT_MS = 10000;
+
+let remoteConfig = null;
+let remoteEnabled = false;
+let remoteBaseUrl = "";
+let remoteApiKey = "";
+let remoteRowId = "main";
 
 function hasUikitModal(){
   return Boolean(ui && typeof ui.modal === "function");
@@ -80,6 +87,7 @@ const deckEditorModal = document.getElementById("deckEditorModal");
 const slideEditorModal = document.getElementById("slideEditorModal");
 const slideEditorForm = document.getElementById("slideEditorForm");
 const fileImportDeck = document.getElementById("fileImportDeck");
+const syncStatus = document.getElementById("syncStatus");
 
 elTitle.textContent = currentDeck.title;
 
@@ -136,6 +144,128 @@ function linesField(label, key, value){
       <textarea class="form-textarea" data-kind="lines" data-key="${escAttr(key)}">${esc(arrayToLines(value))}</textarea>
     </div>
   `;
+}
+
+function setSyncStatus(message, tone = "local"){
+  if (!syncStatus) return;
+  syncStatus.textContent = message;
+  syncStatus.classList.remove("sync-local", "sync-remote", "sync-error");
+  syncStatus.classList.add(`sync-${tone}`);
+}
+
+async function loadRemoteConfig(){
+  if (window.DECK_REMOTE_CONFIG) {
+    remoteConfig = window.DECK_REMOTE_CONFIG;
+  }
+
+  if (!remoteConfig) {
+    try {
+      const mod = await import("./remote-config.js");
+      remoteConfig = mod.remoteConfig || mod.default || null;
+    } catch {
+      remoteConfig = null;
+    }
+  }
+
+  if (!remoteConfig) return;
+
+  const url = String(remoteConfig.supabaseUrl || "").trim();
+  const key = String(remoteConfig.supabaseAnonKey || "").trim();
+  const rowId = String(remoteConfig.rowId || "main").trim();
+
+  if (!url || !key) return;
+
+  remoteEnabled = true;
+  remoteBaseUrl = url.replace(/\/$/, "");
+  remoteApiKey = key;
+  remoteRowId = rowId || "main";
+}
+
+function remoteHeaders(extra = {}){
+  return {
+    apikey: remoteApiKey,
+    Authorization: `Bearer ${remoteApiKey}`,
+    ...extra
+  };
+}
+
+async function fetchWithTimeout(url, options){
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REMOTE_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchRemoteDeck(){
+  if (!remoteEnabled) return null;
+
+  const rowFilter = encodeURIComponent(remoteRowId);
+  const url = `${remoteBaseUrl}/rest/v1/deck_state?id=eq.${rowFilter}&select=deck,updated_at&limit=1`;
+  const res = await fetchWithTimeout(url, {
+    method: "GET",
+    headers: remoteHeaders()
+  });
+
+  if (!res.ok) {
+    throw new Error(`GET deck_state failed (${res.status})`);
+  }
+
+  const rows = await res.json();
+  if (!Array.isArray(rows) || !rows.length) return null;
+
+  const candidate = rows[0]?.deck;
+  if (isValidDeck(candidate)) return candidate;
+  return null;
+}
+
+async function saveRemoteDeckState(deckToSave){
+  if (!remoteEnabled) return false;
+
+  const url = `${remoteBaseUrl}/rest/v1/deck_state?on_conflict=id`;
+  const payload = [{ id: remoteRowId, deck: deckToSave }];
+  const res = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: remoteHeaders({
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=representation"
+    }),
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    throw new Error(`POST deck_state failed (${res.status})`);
+  }
+
+  return true;
+}
+
+async function syncSave({ notify = false } = {}){
+  persistDeck();
+
+  if (!remoteEnabled) {
+    setSyncStatus("Local", "local");
+    if (notify) {
+      alert("Guardado local. Configura Supabase para compartir con todos.");
+    }
+    return;
+  }
+
+  try {
+    await saveRemoteDeckState(currentDeck);
+    setSyncStatus("Compartido", "remote");
+    if (notify) {
+      alert("Cambios guardados y compartidos.");
+    }
+  } catch {
+    setSyncStatus("Error remoto (local OK)", "error");
+    if (notify) {
+      alert("No se pudo guardar en remoto. Se mantuvo guardado local.");
+    }
+  }
 }
 
 function iconForLayout(layout=""){
@@ -724,7 +854,7 @@ function applyBasicSlideChanges(){
     }
   });
 
-  persistDeck();
+  void syncSave();
   render();
 }
 
@@ -746,8 +876,9 @@ btnApplyDeckChanges?.addEventListener("click", () => {
     const parsed = JSON.parse(deckEditorTextarea.value);
     const ok = applyDeck(parsed);
     if (ok) {
+      void syncSave();
       closeModal(deckEditorModal);
-      alert("Cambios aplicados y guardados en este navegador.");
+      alert("Cambios aplicados. Guardado local y remoto (si esta activo).");
     }
   } catch {
     alert("JSON invalido. Revisa la sintaxis antes de aplicar.");
@@ -757,12 +888,11 @@ btnApplyDeckChanges?.addEventListener("click", () => {
 btnApplySlideChanges?.addEventListener("click", () => {
   applyBasicSlideChanges();
   closeModal(slideEditorModal);
-  alert("Cambios de texto aplicados y guardados.");
+  alert("Cambios de texto aplicados. Guardado local y remoto (si esta activo).");
 });
 
-btnSaveDeck?.addEventListener("click", () => {
-  persistDeck();
-  alert("Cambios guardados localmente.");
+btnSaveDeck?.addEventListener("click", async () => {
+  await syncSave({ notify: true });
 });
 
 btnRestoreDeck?.addEventListener("click", () => {
@@ -773,6 +903,7 @@ btnRestoreDeck?.addEventListener("click", () => {
   localStorage.removeItem(STORAGE_KEY);
   idx = 0;
   render();
+  void syncSave();
 });
 
 btnExportDeck?.addEventListener("click", exportDeck);
@@ -816,5 +947,25 @@ function initFromHash(){
   if (found >= 0) idx = found;
 }
 
-initFromHash();
-render();
+async function bootstrap(){
+  setSyncStatus("Local", "local");
+  await loadRemoteConfig();
+
+  if (remoteEnabled) {
+    try {
+      const remoteDeck = await fetchRemoteDeck();
+      if (isValidDeck(remoteDeck)) {
+        currentDeck = remoteDeck;
+        persistDeck();
+      }
+      setSyncStatus("Compartido", "remote");
+    } catch {
+      setSyncStatus("Error remoto (local)", "error");
+    }
+  }
+
+  initFromHash();
+  render();
+}
+
+bootstrap();

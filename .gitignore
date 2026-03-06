@@ -5,6 +5,7 @@ Thumbs.db
 
 # Local env
 .env
+assets/js/remote-config.js
 
 # Node/Python leftovers
 node_modules/

@@ -156,6 +156,33 @@ body { margin: 0; }
   box-shadow: 0 12px 30px rgba(55, 26, 54, .14);
 }
 
+.sync-status{
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+
+.sync-local{
+  color: #5e4d61;
+  background: #f6f1f7;
+  border-color: #e4d8e6;
+}
+
+.sync-remote{
+  color: #165f3a;
+  background: #eaf8f0;
+  border-color: #bfe7cf;
+}
+
+.sync-error{
+  color: #8b2336;
+  background: #ffeef1;
+  border-color: #f6c4ce;
+}
+
 .uk-nav-default > li > a{
   color: rgba(255,255,255,.82);
   border-left: 2px solid transparent;
@@ -423,5 +450,10 @@ body { margin: 0; }
   .deck-actions-bottom .uk-button{
     flex: 1 1 calc(33.3% - 6px);
     min-width: 110px;
+  }
+
+  .sync-status{
+    width: 100%;
+    justify-content: center;
   }
 }
