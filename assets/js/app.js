@@ -3,6 +3,30 @@ import { deck } from "./slides.js";
 const STORAGE_KEY = "deck_uikit_state_v1";
 const ui = window.UIkit;
 
+function hasUikitModal(){
+  return Boolean(ui && typeof ui.modal === "function");
+}
+
+function openModal(modalEl){
+  if (!modalEl) return;
+  if (hasUikitModal()) {
+    ui.modal(modalEl).show();
+    return;
+  }
+
+  modalEl.classList.add("manual-modal-open");
+}
+
+function closeModal(modalEl){
+  if (!modalEl) return;
+  if (hasUikitModal()) {
+    ui.modal(modalEl).hide();
+    return;
+  }
+
+  modalEl.classList.remove("manual-modal-open");
+}
+
 function deepClone(value){
   return JSON.parse(JSON.stringify(value));
 }
@@ -709,12 +733,12 @@ btnNext.addEventListener("click", next);
 
 btnEditText?.addEventListener("click", () => {
   renderBasicSlideEditor();
-  ui.modal(slideEditorModal).show();
+  openModal(slideEditorModal);
 });
 
 btnEditDeck?.addEventListener("click", () => {
   deckEditorTextarea.value = JSON.stringify(currentDeck, null, 2);
-  ui.modal(deckEditorModal).show();
+  openModal(deckEditorModal);
 });
 
 btnApplyDeckChanges?.addEventListener("click", () => {
@@ -722,7 +746,7 @@ btnApplyDeckChanges?.addEventListener("click", () => {
     const parsed = JSON.parse(deckEditorTextarea.value);
     const ok = applyDeck(parsed);
     if (ok) {
-      ui.modal(deckEditorModal).hide();
+      closeModal(deckEditorModal);
       alert("Cambios aplicados y guardados en este navegador.");
     }
   } catch {
@@ -732,7 +756,7 @@ btnApplyDeckChanges?.addEventListener("click", () => {
 
 btnApplySlideChanges?.addEventListener("click", () => {
   applyBasicSlideChanges();
-  ui.modal(slideEditorModal).hide();
+  closeModal(slideEditorModal);
   alert("Cambios de texto aplicados y guardados.");
 });
 
@@ -762,6 +786,22 @@ fileImportDeck?.addEventListener("change", () => {
   importDeckFromFile(file);
   fileImportDeck.value = "";
 });
+
+if (!hasUikitModal()) {
+  document.querySelectorAll(".uk-modal-close").forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeModal(btn.closest(".uk-modal"));
+    });
+  });
+
+  [deckEditorModal, slideEditorModal].forEach(modal => {
+    modal?.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        closeModal(modal);
+      }
+    });
+  });
+}
 
 window.addEventListener("keydown", (e) => {
   if (e.key === "ArrowLeft") prev();

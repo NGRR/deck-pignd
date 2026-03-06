@@ -200,6 +200,24 @@ body { margin: 0; }
   width: min(900px, calc(100vw - 24px));
 }
 
+.uk-modal:not(.uk-open):not(.manual-modal-open){
+  display: none;
+}
+
+.uk-modal.manual-modal-open{
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background: rgba(17, 10, 16, .54);
+  padding: 14px;
+  overflow: auto;
+}
+
+.uk-modal.manual-modal-open .uk-modal-dialog{
+  margin: 30px auto;
+}
+
 .deck-editor-textarea{
   min-height: 56vh;
   font-family: Consolas, "Courier New", monospace;
