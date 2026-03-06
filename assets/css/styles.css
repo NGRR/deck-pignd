@@ -193,10 +193,22 @@ body { margin: 0; }
   position: relative;
   display: flex;
   align-items: center;
+  cursor: grab;
 }
 
 .toc-item > a{
   flex: 1;
+}
+
+.toc-item.toc-dragging{
+  opacity: .55;
+  cursor: grabbing;
+}
+
+.toc-item.toc-drag-over{
+  border-radius: 6px;
+  outline: 1px dashed rgba(255,255,255,.65);
+  background: rgba(255,255,255,.12);
 }
 
 .toc-menu-btn{

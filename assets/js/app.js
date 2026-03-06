@@ -503,12 +503,33 @@ function closeTocMenus(){
   });
 }
 
+let draggedTocIndex = null;
+
+function reorderSlide(fromIndex, toIndex){
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return;
+  if (fromIndex < 0 || toIndex < 0) return;
+  if (fromIndex >= currentDeck.slides.length || toIndex >= currentDeck.slides.length) return;
+  if (fromIndex === toIndex) return;
+
+  const activeSlideId = currentDeck.slides[idx]?.id || null;
+  const [moved] = currentDeck.slides.splice(fromIndex, 1);
+  const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex;
+  currentDeck.slides.splice(insertAt, 0, moved);
+
+  const nextIdx = currentDeck.slides.findIndex(slide => slide?.id === activeSlideId);
+  idx = nextIdx >= 0 ? nextIdx : Math.max(0, Math.min(insertAt, currentDeck.slides.length - 1));
+
+  markLocalMutation();
+  render();
+  void syncSave({ summary: `Reordeno lamina: ${moved?.title || "(sin titulo)"}` });
+}
+
 function renderTOC(){
   const items = currentDeck.slides.map((s, i) => {
     const active = i === idx ? "uk-active" : "";
     const icon = iconForLayout(s.layout);
     return `
-      <li class="${active} toc-item">
+      <li class="${active} toc-item" data-toc-item="${i}" draggable="true">
         <a href="#${esc(s.id)}" data-idx="${i}"><i class="${icon} toc-icon" aria-hidden="true"></i>${esc(s.title)}</a>
         <button class="toc-menu-btn" type="button" data-menu-toggle="${i}" aria-label="Menu contextual">+</button>
         <div class="toc-actions-menu" data-menu="${i}">
@@ -522,6 +543,58 @@ function renderTOC(){
   }).join("");
 
   elTOC.innerHTML = `<ul class="uk-nav uk-nav-default">${items}</ul>`;
+
+  elTOC.querySelectorAll("[data-toc-item]").forEach(item => {
+    item.addEventListener("dragstart", (e) => {
+      const source = e.target;
+      if (!(source instanceof Element)) return;
+      if (source.closest(".toc-menu-btn") || source.closest(".toc-actions-menu")) {
+        e.preventDefault();
+        return;
+      }
+
+      const i = Number(item.dataset.tocItem);
+      if (!Number.isInteger(i)) return;
+
+      draggedTocIndex = i;
+      item.classList.add("toc-dragging");
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(i));
+      }
+    });
+
+    item.addEventListener("dragover", (e) => {
+      if (draggedTocIndex == null) return;
+      e.preventDefault();
+      item.classList.add("toc-drag-over");
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "move";
+      }
+    });
+
+    item.addEventListener("dragleave", () => {
+      item.classList.remove("toc-drag-over");
+    });
+
+    item.addEventListener("drop", (e) => {
+      e.preventDefault();
+      item.classList.remove("toc-drag-over");
+      const targetIndex = Number(item.dataset.tocItem);
+      if (!Number.isInteger(targetIndex) || draggedTocIndex == null) return;
+
+      reorderSlide(draggedTocIndex, targetIndex);
+      draggedTocIndex = null;
+    });
+
+    item.addEventListener("dragend", () => {
+      draggedTocIndex = null;
+      item.classList.remove("toc-drag-over", "toc-dragging");
+      elTOC.querySelectorAll(".toc-drag-over, .toc-dragging").forEach(node => {
+        node.classList.remove("toc-drag-over", "toc-dragging");
+      });
+    });
+  });
 
   elTOC.querySelectorAll("a[data-idx]").forEach(a => {
     a.addEventListener("click", (e) => {
@@ -1125,7 +1198,7 @@ function exportDeck(){
   URL.revokeObjectURL(url);
 }
 
-function fitImageOnPdfPage(pdf, canvas, image){
+function fitImageOnPdfPage(pdf, canvas, image, imageFormat = "JPEG"){
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
 
@@ -1140,7 +1213,54 @@ function fitImageOnPdfPage(pdf, canvas, image){
 
   const x = (pageW - drawW) / 2;
   const y = (pageH - drawH) / 2;
-  pdf.addImage(image, "JPEG", x, y, drawW, drawH);
+  pdf.addImage(image, imageFormat, x, y, drawW, drawH);
+}
+
+function loadExternalScript(src){
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing && existing.dataset.loaded === "true") {
+      resolve();
+      return;
+    }
+
+    const script = existing || document.createElement("script");
+    script.src = src;
+    script.defer = true;
+
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+
+    script.onerror = () => reject(new Error(`No se pudo cargar: ${src}`));
+
+    if (!existing) {
+      document.head.appendChild(script);
+    }
+  });
+}
+
+async function ensurePdfLibraries(){
+  if (!window.html2canvas) {
+    await loadExternalScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+  }
+
+  if (!window.jspdf?.jsPDF) {
+    await loadExternalScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+  }
+
+  if (!window.html2canvas || !window.jspdf?.jsPDF) {
+    throw new Error("Dependencias PDF no disponibles");
+  }
+}
+
+function canvasToImageData(canvas){
+  try {
+    return { data: canvas.toDataURL("image/jpeg", 0.96), format: "JPEG" };
+  } catch {
+    return { data: canvas.toDataURL("image/png"), format: "PNG" };
+  }
 }
 
 async function captureSlideCanvas(slideData, tone){
@@ -1163,6 +1283,9 @@ async function captureSlideCanvas(slideData, tone){
   document.body.appendChild(captureRoot);
 
   try {
+    // Deja que el browser calcule layout completo antes de capturar.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
     return await html2canvasLib(captureRoot, {
       backgroundColor: "#ffffff",
       scale: 2,
@@ -1175,12 +1298,7 @@ async function captureSlideCanvas(slideData, tone){
 }
 
 async function exportPdf(){
-  const jsPdfLib = window.jspdf?.jsPDF;
-
-  if (!jsPdfLib) {
-    alert("No fue posible exportar PDF. Recarga la pagina e intenta nuevamente.");
-    return;
-  }
+  let jsPdfLib = window.jspdf?.jsPDF;
 
   const activeSlide = currentDeck.slides[idx] || {};
   const tone = idx % 2 === 0 ? "tone-primary" : "tone-secondary";
@@ -1188,11 +1306,13 @@ async function exportPdf(){
   if (btnExportPdfDeck) btnExportPdfDeck.disabled = true;
 
   try {
-    const canvas = await captureSlideCanvas(activeSlide, tone);
+    await ensurePdfLibraries();
+    jsPdfLib = window.jspdf?.jsPDF;
 
-    const image = canvas.toDataURL("image/jpeg", 0.96);
+    const canvas = await captureSlideCanvas(activeSlide, tone);
+    const image = canvasToImageData(canvas);
     const pdf = new jsPdfLib({ orientation: "landscape", unit: "pt", format: "letter" });
-    fitImageOnPdfPage(pdf, canvas, image);
+    fitImageOnPdfPage(pdf, canvas, image.data, image.format);
 
     const safeTitle = String(activeSlide.title || "lamina")
       .toLowerCase()
@@ -1200,7 +1320,8 @@ async function exportPdf(){
       .replace(/^-+|-+$/g, "") || "lamina";
 
     pdf.save(`${safeTitle}.pdf`);
-  } catch {
+  } catch (error) {
+    console.error("PDF export error (slide)", error);
     alert("No se pudo generar el PDF para esta lamina.");
   } finally {
     btnExportPdf.disabled = false;
@@ -1209,11 +1330,7 @@ async function exportPdf(){
 }
 
 async function exportPdfDeck(){
-  const jsPdfLib = window.jspdf?.jsPDF;
-  if (!jsPdfLib) {
-    alert("No fue posible exportar PDF. Recarga la pagina e intenta nuevamente.");
-    return;
-  }
+  let jsPdfLib = window.jspdf?.jsPDF;
 
   if (!Array.isArray(currentDeck.slides) || !currentDeck.slides.length) {
     alert("No hay laminas para exportar.");
@@ -1224,18 +1341,21 @@ async function exportPdfDeck(){
   if (btnExportPdfDeck) btnExportPdfDeck.disabled = true;
 
   try {
+    await ensurePdfLibraries();
+    jsPdfLib = window.jspdf?.jsPDF;
+
     const pdf = new jsPdfLib({ orientation: "landscape", unit: "pt", format: "letter" });
 
     for (let i = 0; i < currentDeck.slides.length; i++) {
       const s = currentDeck.slides[i] || {};
       const tone = i % 2 === 0 ? "tone-primary" : "tone-secondary";
       const canvas = await captureSlideCanvas(s, tone);
-      const image = canvas.toDataURL("image/jpeg", 0.95);
+      const image = canvasToImageData(canvas);
 
       if (i > 0) {
         pdf.addPage("letter", "landscape");
       }
-      fitImageOnPdfPage(pdf, canvas, image);
+      fitImageOnPdfPage(pdf, canvas, image.data, image.format);
     }
 
     const safeDeckTitle = String(currentDeck.title || "deck")
@@ -1244,7 +1364,8 @@ async function exportPdfDeck(){
       .replace(/^-+|-+$/g, "") || "deck";
 
     pdf.save(`${safeDeckTitle}-deck.pdf`);
-  } catch {
+  } catch (error) {
+    console.error("PDF export error (deck)", error);
     alert("No se pudo generar el PDF completo del deck.");
   } finally {
     btnExportPdf.disabled = false;
