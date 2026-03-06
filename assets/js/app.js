@@ -329,6 +329,21 @@ function insertSlideAt(targetIndex, where){
   void syncSave();
 }
 
+function duplicateSlideAt(targetIndex){
+  const source = currentDeck.slides[targetIndex];
+  if (!source || typeof source !== "object") return;
+
+  const clone = deepClone(source);
+  clone.id = uniqueSlideId(source.id || source.title || "lamina");
+  clone.title = `${source.title || "Lamina"} (copia)`;
+
+  const insertAt = targetIndex + 1;
+  currentDeck.slides.splice(insertAt, 0, clone);
+  idx = insertAt;
+  render();
+  void syncSave();
+}
+
 function deleteSlideAt(targetIndex){
   if (currentDeck.slides.length <= 1) {
     alert("No se puede borrar la ultima lamina.");
@@ -367,6 +382,7 @@ function renderTOC(){
         <div class="toc-actions-menu" data-menu="${i}">
           <button type="button" data-action="add-above" data-idx="${i}">+ Arriba</button>
           <button type="button" data-action="add-below" data-idx="${i}">+ Abajo</button>
+          <button type="button" data-action="duplicate-slide" data-idx="${i}">Duplicar</button>
           <button type="button" data-action="delete-slide" data-idx="${i}">Borrar</button>
         </div>
       </li>
@@ -410,6 +426,7 @@ function renderTOC(){
       if (!Number.isInteger(targetIndex)) return;
       if (action === "add-above") insertSlideAt(targetIndex, "above");
       if (action === "add-below") insertSlideAt(targetIndex, "below");
+      if (action === "duplicate-slide") duplicateSlideAt(targetIndex);
       if (action === "delete-slide") deleteSlideAt(targetIndex);
     });
   });
@@ -812,15 +829,46 @@ function importDeckFromFile(file){
   reader.readAsText(file, "utf-8");
 }
 
+function objectArrayFactory(key, listLength){
+  if (key === "slide.cards") {
+    return { title: `Nueva card ${listLength + 1}`, body: "Escribe aqui el contenido" };
+  }
+
+  if (key === "slide.kpis") {
+    return { label: `KPI ${listLength + 1}`, value: "0", note: "" };
+  }
+
+  if (key === "slide.tiers") {
+    return { title: `Nivel ${listLength + 1}`, body: "Descripcion" };
+  }
+
+  if (key === "slide.rows") {
+    return { label: `Elemento ${listLength + 1}`, value: "0" };
+  }
+
+  if (key === "slide.segments") {
+    return { label: `Segmento ${listLength + 1}`, value: 0, cls: "segA" };
+  }
+
+  return { title: `Nuevo item ${listLength + 1}` };
+}
+
+function editorLabelForKey(key){
+  const map = {
+    "slide.cards": "card",
+    "slide.kpis": "KPI",
+    "slide.tiers": "tier",
+    "slide.rows": "fila",
+    "slide.segments": "segmento"
+  };
+  return map[key] || "item";
+}
+
 function renderObjectArrayEditor(label, key, items){
-  if (!Array.isArray(items) || !items.length) return "";
+  const list = Array.isArray(items) ? items : [];
+  const addBtn = `<button type="button" class="uk-button uk-button-default uk-button-small" data-action="add-item" data-key="${escAttr(key)}">Agregar ${esc(editorLabelForKey(key))}</button>`;
 
-  const canAdd = key === "slide.cards";
-  const addBtn = canAdd
-    ? `<button type="button" class="uk-button uk-button-default uk-button-small" data-action="add-card">Agregar card</button>`
-    : "";
-
-  const entries = items.map((item, i) => {
+  const entries = list.map((item, i) => {
     if (!item || typeof item !== "object") return "";
 
     const fields = Object.keys(item)
@@ -834,14 +882,14 @@ function renderObjectArrayEditor(label, key, items){
       <div class="form-block">
         <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
           <div class="form-block-title uk-margin-remove">${esc(label)} ${i + 1}</div>
-          ${canAdd ? `<button type="button" class="uk-button uk-button-default uk-button-small" data-action="remove-card" data-index="${i}">Quitar</button>` : ""}
+          <button type="button" class="uk-button uk-button-default uk-button-small" data-action="remove-item" data-key="${escAttr(key)}" data-index="${i}">Quitar</button>
         </div>
         ${fields}
       </div>
     `;
   }).join("");
 
-  if (!entries) return "";
+  const emptyState = entries ? "" : `<div class="small-note uk-margin-small-top">Sin elementos. Usa \"Agregar\" para crear uno.</div>`;
 
   return `
     <div class="form-block">
@@ -850,33 +898,39 @@ function renderObjectArrayEditor(label, key, items){
         ${addBtn}
       </div>
       ${entries}
+      ${emptyState}
     </div>
   `;
 }
 
 function bindSlideEditorActions(){
-  const addCardBtn = slideEditorForm.querySelector('[data-action="add-card"]');
-  addCardBtn?.addEventListener("click", () => {
-    const s = currentDeck.slides[idx];
-    if (!Array.isArray(s.cards)) {
-      s.cards = [];
-    }
+  slideEditorForm.querySelectorAll('[data-action="add-item"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.key || "";
+      if (!key.startsWith("slide.")) return;
 
-    s.cards.push({
-      title: `Nueva card ${s.cards.length + 1}`,
-      body: "Escribe aqui el contenido"
+      const s = currentDeck.slides[idx];
+      const localPath = key.slice(6);
+      if (!Array.isArray(s[localPath])) {
+        s[localPath] = [];
+      }
+
+      s[localPath].push(objectArrayFactory(key, s[localPath].length));
+      renderBasicSlideEditor();
     });
-
-    renderBasicSlideEditor();
   });
 
-  slideEditorForm.querySelectorAll('[data-action="remove-card"]').forEach(btn => {
+  slideEditorForm.querySelectorAll('[data-action="remove-item"]').forEach(btn => {
     btn.addEventListener("click", () => {
-      const s = currentDeck.slides[idx];
+      const key = btn.dataset.key || "";
       const i = Number(btn.dataset.index);
-      if (!Array.isArray(s.cards) || !Number.isInteger(i)) return;
+      if (!key.startsWith("slide.") || !Number.isInteger(i)) return;
 
-      s.cards.splice(i, 1);
+      const s = currentDeck.slides[idx];
+      const localPath = key.slice(6);
+      if (!Array.isArray(s[localPath])) return;
+
+      s[localPath].splice(i, 1);
       renderBasicSlideEditor();
     });
   });
