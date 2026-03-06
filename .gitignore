@@ -1,0 +1,12 @@
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Local env
+.env
+
+# Node/Python leftovers
+node_modules/
+__pycache__/
+*.pyc
