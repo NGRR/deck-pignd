@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Deck PIGND — UIkit</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.16/dist/css/uikit.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/uikit@3.21.16/dist/js/uikit.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/uikit@3.21.16/dist/js/uikit-icons.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <script type="module" defer src="assets/js/app.js"></script>
+</head>
+
+<body class="deck-body">
+  <div class="uk-grid-collapse" uk-grid>
+    <!-- Sidebar -->
+    <aside class="deck-sidebar uk-visible@m">
+      <div class="uk-padding-small">
+        <div class="brand-lockup uk-margin-small-bottom">
+          <div class="brand-mark"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></div>
+          <div>
+            <div class="brand-kicker">Poder Judicial</div>
+            <div class="brand-title">Secretaria de Genero</div>
+          </div>
+        </div>
+        <div id="toc" class="uk-nav uk-nav-default"></div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="deck-main">
+      <header class="deck-topbar uk-flex uk-flex-between uk-flex-middle uk-padding-small">
+        <div class="uk-text-small">
+          <span id="deckTitle" class="uk-text-bold">PIGND</span>
+          <span class="uk-text-muted">·</span>
+          <span id="slideMeta" class="uk-text-muted"></span>
+          <span class="deck-tag uk-margin-small-left"><i class="fa-solid fa-book-open-reader"></i> Estudio DE EVALUACIÓN DE LA POLÍTICA DE GÉNERO</span>
+        </div>
+
+        <div class="uk-flex uk-flex-middle uk-grid-small" uk-grid>
+          <button id="btnPrev" class="uk-button uk-button-default uk-button-small" type="button" uk-icon="chevron-left"></button>
+          <button id="btnNext" class="uk-button uk-button-default uk-button-small" type="button" uk-icon="chevron-right"></button>
+        </div>
+      </header>
+
+      <div class="deck-stage-wrap">
+        <section id="stage" class="deck-stage" aria-live="polite"></section>
+      </div>
+
+      <footer class="deck-footer uk-padding-small">
+        <progress id="progress" class="uk-progress" value="0" max="100"></progress>
+      </footer>
+    </main>
+  </div>
+
+  <div class="deck-actions-bottom" role="toolbar" aria-label="Edicion y guardado">
+    <button id="btnEditText" class="uk-button uk-button-primary uk-button-small" type="button">Editar texto</button>
+    <button id="btnEditDeck" class="uk-button uk-button-primary uk-button-small" type="button">Editar JSON</button>
+    <button id="btnExportPdf" class="uk-button uk-button-secondary uk-button-small" type="button">PDF</button>
+    <button id="btnExportPdfDeck" class="uk-button uk-button-secondary uk-button-small" type="button">PDF deck</button>
+    <button id="btnExportPpt" class="uk-button uk-button-secondary uk-button-small" type="button">PPT</button>
+    <button id="btnExportPptDeck" class="uk-button uk-button-secondary uk-button-small" type="button">PPT deck</button>
+    <button id="btnSaveDeck" class="uk-button uk-button-secondary uk-button-small" type="button">Guardar</button>
+    <button id="btnRestoreDeck" class="uk-button uk-button-default uk-button-small" type="button">Restaurar</button>
+    <button id="btnExportDeck" class="uk-button uk-button-default uk-button-small" type="button">Exportar</button>
+    <button id="btnImportDeck" class="uk-button uk-button-default uk-button-small" type="button">Importar</button>
+    <span id="syncStatus" class="sync-status sync-local">Local</span>
+  </div>
+
+  <input id="fileImportDeck" type="file" accept="application/json" hidden />
+
+  <div id="deckEditorModal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body deck-modal-dialog">
+      <h2 class="uk-modal-title">Editor JSON del Deck</h2>
+      <p class="uk-text-meta uk-margin-small-top">Edita el JSON completo y luego aplica cambios.</p>
+      <textarea id="deckEditorTextarea" class="deck-editor-textarea uk-textarea" spellcheck="false"></textarea>
+      <div class="uk-flex uk-flex-right uk-grid-small uk-margin-top" uk-grid>
+        <button class="uk-button uk-button-default uk-modal-close" type="button">Cerrar</button>
+        <button id="btnApplyDeckChanges" class="uk-button uk-button-primary" type="button">Aplicar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="slideEditorModal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body deck-modal-dialog">
+      <h2 class="uk-modal-title">Editor de texto (lamina actual)</h2>
+      <p class="uk-text-meta uk-margin-small-top">Edita contenido sin tocar JSON. Los cambios se guardan en este navegador.</p>
+
+      <div id="slideEditorForm" class="slide-editor-form uk-margin-top"></div>
+
+      <div class="uk-flex uk-flex-right uk-grid-small uk-margin-top" uk-grid>
+        <button class="uk-button uk-button-default uk-modal-close" type="button">Cerrar</button>
+        <button id="btnApplySlideChanges" class="uk-button uk-button-primary" type="button">Aplicar cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="historyModal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body deck-modal-dialog">
+      <h2 class="uk-modal-title">Historial de versiones</h2>
+      <p class="uk-text-meta uk-margin-small-top">Control de cambios con fecha/hora y resumen del ultimo ajuste.</p>
+
+      <div id="historyList" class="history-list uk-margin-top"></div>
+
+      <div class="uk-flex uk-flex-right uk-grid-small uk-margin-top" uk-grid>
+        <button id="btnRestoreOriginal" class="uk-button uk-button-danger" type="button">Restaurar original</button>
+        <button class="uk-button uk-button-default uk-modal-close" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
