@@ -1,6 +1,8 @@
 import { deck } from "./slides.js";
 
 const STORAGE_KEY = "deck_uikit_state_v1";
+const HISTORY_KEY = "deck_uikit_history_v1";
+const MAX_HISTORY_ITEMS = 30;
 const ui = window.UIkit;
 const REMOTE_TIMEOUT_MS = 10000;
 
@@ -56,6 +58,18 @@ function readStoredDeck(){
   }
 }
 
+function readHistory(){
+  const raw = localStorage.getItem(HISTORY_KEY);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function isValidDeck(candidate){
   return Boolean(
     candidate &&
@@ -70,6 +84,7 @@ const storedDeck = readStoredDeck();
 if (isValidDeck(storedDeck)) {
   currentDeck = storedDeck;
 }
+let versionHistory = readHistory();
 
 const elTOC = document.getElementById("toc");
 const elStage = document.getElementById("stage");
@@ -84,6 +99,7 @@ const btnEditDeck = document.getElementById("btnEditDeck");
 const btnExportPdf = document.getElementById("btnExportPdf");
 const btnSaveDeck = document.getElementById("btnSaveDeck");
 const btnRestoreDeck = document.getElementById("btnRestoreDeck");
+const btnRestoreOriginal = document.getElementById("btnRestoreOriginal");
 const btnExportDeck = document.getElementById("btnExportDeck");
 const btnImportDeck = document.getElementById("btnImportDeck");
 const btnApplyDeckChanges = document.getElementById("btnApplyDeckChanges");
@@ -91,7 +107,9 @@ const btnApplySlideChanges = document.getElementById("btnApplySlideChanges");
 const deckEditorTextarea = document.getElementById("deckEditorTextarea");
 const deckEditorModal = document.getElementById("deckEditorModal");
 const slideEditorModal = document.getElementById("slideEditorModal");
+const historyModal = document.getElementById("historyModal");
 const slideEditorForm = document.getElementById("slideEditorForm");
+const historyList = document.getElementById("historyList");
 const fileImportDeck = document.getElementById("fileImportDeck");
 const syncStatus = document.getElementById("syncStatus");
 const printDeck = document.getElementById("printDeck");
@@ -124,6 +142,109 @@ function linesToArray(value){
     .split("\n")
     .map(x => x.trim())
     .filter(Boolean);
+}
+
+function saveHistory(){
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(versionHistory));
+}
+
+function historySignature(deckData){
+  try {
+    return JSON.stringify(deckData);
+  } catch {
+    return "";
+  }
+}
+
+function recordVersion(summary){
+  const snapshot = deepClone(currentDeck);
+  const signature = historySignature(snapshot);
+  if (!signature) return;
+
+  const latest = versionHistory[0];
+  if (latest && latest.signature === signature) return;
+
+  const id = (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function")
+    ? globalThis.crypto.randomUUID()
+    : `v-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+  versionHistory.unshift({
+    id,
+    at: new Date().toISOString(),
+    summary: summary || "Actualizacion",
+    signature,
+    deck: snapshot
+  });
+
+  if (versionHistory.length > MAX_HISTORY_ITEMS) {
+    versionHistory = versionHistory.slice(0, MAX_HISTORY_ITEMS);
+  }
+
+  saveHistory();
+}
+
+function formatHistoryTime(iso){
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return String(iso || "");
+  return dt.toLocaleString("es-CL", { dateStyle: "short", timeStyle: "medium" });
+}
+
+function restoreOriginalDeck(){
+  const confirmed = confirm("Esto eliminara los cambios locales y restaurara el deck original. ¿Continuar?");
+  if (!confirmed) return;
+
+  markLocalMutation();
+  currentDeck = deepClone(defaultDeck);
+  localStorage.removeItem(STORAGE_KEY);
+  idx = 0;
+  render();
+  void syncSave({ summary: "Restauracion a version original" });
+  closeModal(historyModal);
+}
+
+function restoreHistoryVersion(versionId){
+  const entry = versionHistory.find(v => v.id === versionId);
+  if (!entry || !isValidDeck(entry.deck)) return;
+
+  const confirmed = confirm("¿Restaurar esta version del historial?");
+  if (!confirmed) return;
+
+  markLocalMutation();
+  currentDeck = deepClone(entry.deck);
+  idx = 0;
+  render();
+  void syncSave({ summary: `Restaurado desde historial: ${entry.summary}` });
+  closeModal(historyModal);
+}
+
+function renderHistoryList(){
+  if (!historyList) return;
+
+  if (!versionHistory.length) {
+    historyList.innerHTML = "<div class=\"small-note\">Sin versiones guardadas aun.</div>";
+    return;
+  }
+
+  historyList.innerHTML = versionHistory.map(v => `
+    <article class="history-item">
+      <div class="history-time">${esc(formatHistoryTime(v.at))}</div>
+      <div class="history-summary">${esc(v.summary || "Actualizacion")}</div>
+      <div class="uk-margin-small-top">
+        <button class="uk-button uk-button-default uk-button-small" type="button" data-history-restore="${escAttr(v.id)}">Restaurar esta version</button>
+      </div>
+    </article>
+  `).join("");
+
+  historyList.querySelectorAll("[data-history-restore]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      restoreHistoryVersion(btn.dataset.historyRestore || "");
+    });
+  });
+}
+
+function openHistoryModal(){
+  renderHistoryList();
+  openModal(historyModal);
 }
 
 function textField(label, key, value){
@@ -250,8 +371,9 @@ async function saveRemoteDeckState(deckToSave){
   return true;
 }
 
-async function syncSave({ notify = false } = {}){
+async function syncSave({ notify = false, summary = "Actualizacion" } = {}){
   persistDeck();
+  recordVersion(summary);
 
   if (!remoteEnabled) {
     setSyncStatus("Local", "local");
@@ -334,7 +456,7 @@ function insertSlideAt(targetIndex, where){
   currentDeck.slides.splice(insertAt, 0, freshSlide);
   idx = insertAt;
   render();
-  void syncSave();
+  void syncSave({ summary: `Inserto lamina ${where === "above" ? "arriba" : "abajo"}: ${freshSlide.title}` });
 }
 
 function duplicateSlideAt(targetIndex){
@@ -350,7 +472,7 @@ function duplicateSlideAt(targetIndex){
   currentDeck.slides.splice(insertAt, 0, clone);
   idx = insertAt;
   render();
-  void syncSave();
+  void syncSave({ summary: `Duplico lamina: ${clone.title}` });
 }
 
 function deleteSlideAt(targetIndex){
@@ -372,7 +494,7 @@ function deleteSlideAt(targetIndex){
   }
 
   render();
-  void syncSave();
+  void syncSave({ summary: `Borro lamina: ${target?.title || "(sin titulo)"}` });
 }
 
 function closeTocMenus(){
@@ -1043,6 +1165,7 @@ function importDeckFromFile(file){
       const parsed = JSON.parse(String(reader.result || ""));
       const ok = applyDeck(parsed);
       if (ok) {
+        void syncSave({ summary: "Importo deck desde archivo JSON" });
         alert("Deck importado correctamente.");
       }
     } catch {
@@ -1296,7 +1419,7 @@ function applyBasicSlideChanges(){
 
   markLocalMutation();
 
-  void syncSave();
+  void syncSave({ summary: `Edito texto en lamina: ${s.title || "(sin titulo)"}` });
   render();
 }
 
@@ -1320,7 +1443,7 @@ btnApplyDeckChanges?.addEventListener("click", () => {
     const parsed = JSON.parse(deckEditorTextarea.value);
     const ok = applyDeck(parsed);
     if (ok) {
-      void syncSave();
+      void syncSave({ summary: "Edito deck con editor JSON" });
       closeModal(deckEditorModal);
       alert("Cambios aplicados. Guardado local y remoto (si esta activo).");
     }
@@ -1336,20 +1459,14 @@ btnApplySlideChanges?.addEventListener("click", () => {
 });
 
 btnSaveDeck?.addEventListener("click", async () => {
-  await syncSave({ notify: true });
+  await syncSave({ notify: true, summary: "Guardado manual" });
 });
 
 btnRestoreDeck?.addEventListener("click", () => {
-  const confirmed = confirm("Esto eliminara los cambios locales y restaurara el deck original. ¿Continuar?");
-  if (!confirmed) return;
-
-  markLocalMutation();
-  currentDeck = deepClone(defaultDeck);
-  localStorage.removeItem(STORAGE_KEY);
-  idx = 0;
-  render();
-  void syncSave();
+  openHistoryModal();
 });
+
+btnRestoreOriginal?.addEventListener("click", restoreOriginalDeck);
 
 btnExportDeck?.addEventListener("click", exportDeck);
 
@@ -1371,7 +1488,7 @@ if (!hasUikitModal()) {
     });
   });
 
-  [deckEditorModal, slideEditorModal].forEach(modal => {
+  [deckEditorModal, slideEditorModal, historyModal].forEach(modal => {
     modal?.addEventListener("click", (e) => {
       if (e.target === modal) {
         closeModal(modal);
@@ -1418,6 +1535,10 @@ async function bootstrap(){
 
   initFromHash();
   render();
+
+  if (!versionHistory.length) {
+    recordVersion("Version inicial cargada");
+  }
 }
 
 bootstrap();

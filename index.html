@@ -100,5 +100,19 @@
       </div>
     </div>
   </div>
+
+  <div id="historyModal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body deck-modal-dialog">
+      <h2 class="uk-modal-title">Historial de versiones</h2>
+      <p class="uk-text-meta uk-margin-small-top">Control de cambios con fecha/hora y resumen del ultimo ajuste.</p>
+
+      <div id="historyList" class="history-list uk-margin-top"></div>
+
+      <div class="uk-flex uk-flex-right uk-grid-small uk-margin-top" uk-grid>
+        <button id="btnRestoreOriginal" class="uk-button uk-button-danger" type="button">Restaurar original</button>
+        <button class="uk-button uk-button-default uk-modal-close" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
