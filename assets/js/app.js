@@ -97,6 +97,7 @@ const btnNext = document.getElementById("btnNext");
 const btnEditText = document.getElementById("btnEditText");
 const btnEditDeck = document.getElementById("btnEditDeck");
 const btnExportPdf = document.getElementById("btnExportPdf");
+const btnExportPdfDeck = document.getElementById("btnExportPdfDeck");
 const btnSaveDeck = document.getElementById("btnSaveDeck");
 const btnRestoreDeck = document.getElementById("btnRestoreDeck");
 const btnRestoreOriginal = document.getElementById("btnRestoreOriginal");
@@ -1124,18 +1125,29 @@ function exportDeck(){
   URL.revokeObjectURL(url);
 }
 
-async function exportPdf(){
-  const stage = document.getElementById("stage");
-  const html2canvasLib = window.html2canvas;
-  const jsPdfLib = window.jspdf?.jsPDF;
+function fitImageOnPdfPage(pdf, canvas, image){
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
 
-  if (!stage || !html2canvasLib || !jsPdfLib) {
-    alert("No fue posible exportar PDF. Recarga la pagina e intenta nuevamente.");
-    return;
+  const margin = 24;
+  let drawW = pageW - (margin * 2);
+  let drawH = (canvas.height * drawW) / canvas.width;
+
+  if (drawH > pageH - (margin * 2)) {
+    drawH = pageH - (margin * 2);
+    drawW = (canvas.width * drawH) / canvas.height;
   }
 
-  const activeSlide = currentDeck.slides[idx] || {};
-  const tone = idx % 2 === 0 ? "tone-primary" : "tone-secondary";
+  const x = (pageW - drawW) / 2;
+  const y = (pageH - drawH) / 2;
+  pdf.addImage(image, "JPEG", x, y, drawW, drawH);
+}
+
+async function captureSlideCanvas(slideData, tone){
+  const html2canvasLib = window.html2canvas;
+  if (!html2canvasLib) {
+    throw new Error("html2canvas no disponible");
+  }
 
   const captureRoot = document.createElement("div");
   captureRoot.className = "deck-stage";
@@ -1146,36 +1158,41 @@ async function exportPdf(){
   captureRoot.style.width = "1280px";
   captureRoot.style.height = "720px";
   captureRoot.style.zIndex = "-1";
-  captureRoot.innerHTML = `<article class="slide-shell ${tone}">${renderSlide(activeSlide)}</article>`;
+  captureRoot.innerHTML = `<article class="slide-shell ${tone}">${renderSlide(slideData)}</article>`;
 
   document.body.appendChild(captureRoot);
-  btnExportPdf.disabled = true;
 
   try {
-    const canvas = await html2canvasLib(captureRoot, {
+    return await html2canvasLib(captureRoot, {
       backgroundColor: "#ffffff",
       scale: 2,
       useCORS: true,
       logging: false
     });
+  } finally {
+    captureRoot.remove();
+  }
+}
+
+async function exportPdf(){
+  const jsPdfLib = window.jspdf?.jsPDF;
+
+  if (!jsPdfLib) {
+    alert("No fue posible exportar PDF. Recarga la pagina e intenta nuevamente.");
+    return;
+  }
+
+  const activeSlide = currentDeck.slides[idx] || {};
+  const tone = idx % 2 === 0 ? "tone-primary" : "tone-secondary";
+  btnExportPdf.disabled = true;
+  if (btnExportPdfDeck) btnExportPdfDeck.disabled = true;
+
+  try {
+    const canvas = await captureSlideCanvas(activeSlide, tone);
 
     const image = canvas.toDataURL("image/jpeg", 0.96);
     const pdf = new jsPdfLib({ orientation: "landscape", unit: "pt", format: "letter" });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-
-    const margin = 24;
-    let drawW = pageW - (margin * 2);
-    let drawH = (canvas.height * drawW) / canvas.width;
-
-    if (drawH > pageH - (margin * 2)) {
-      drawH = pageH - (margin * 2);
-      drawW = (canvas.width * drawH) / canvas.height;
-    }
-
-    const x = (pageW - drawW) / 2;
-    const y = (pageH - drawH) / 2;
-    pdf.addImage(image, "JPEG", x, y, drawW, drawH);
+    fitImageOnPdfPage(pdf, canvas, image);
 
     const safeTitle = String(activeSlide.title || "lamina")
       .toLowerCase()
@@ -1187,7 +1204,51 @@ async function exportPdf(){
     alert("No se pudo generar el PDF para esta lamina.");
   } finally {
     btnExportPdf.disabled = false;
-    captureRoot.remove();
+    if (btnExportPdfDeck) btnExportPdfDeck.disabled = false;
+  }
+}
+
+async function exportPdfDeck(){
+  const jsPdfLib = window.jspdf?.jsPDF;
+  if (!jsPdfLib) {
+    alert("No fue posible exportar PDF. Recarga la pagina e intenta nuevamente.");
+    return;
+  }
+
+  if (!Array.isArray(currentDeck.slides) || !currentDeck.slides.length) {
+    alert("No hay laminas para exportar.");
+    return;
+  }
+
+  btnExportPdf.disabled = true;
+  if (btnExportPdfDeck) btnExportPdfDeck.disabled = true;
+
+  try {
+    const pdf = new jsPdfLib({ orientation: "landscape", unit: "pt", format: "letter" });
+
+    for (let i = 0; i < currentDeck.slides.length; i++) {
+      const s = currentDeck.slides[i] || {};
+      const tone = i % 2 === 0 ? "tone-primary" : "tone-secondary";
+      const canvas = await captureSlideCanvas(s, tone);
+      const image = canvas.toDataURL("image/jpeg", 0.95);
+
+      if (i > 0) {
+        pdf.addPage("letter", "landscape");
+      }
+      fitImageOnPdfPage(pdf, canvas, image);
+    }
+
+    const safeDeckTitle = String(currentDeck.title || "deck")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "deck";
+
+    pdf.save(`${safeDeckTitle}-deck.pdf`);
+  } catch {
+    alert("No se pudo generar el PDF completo del deck.");
+  } finally {
+    btnExportPdf.disabled = false;
+    if (btnExportPdfDeck) btnExportPdfDeck.disabled = false;
   }
 }
 
@@ -1471,6 +1532,7 @@ btnEditDeck?.addEventListener("click", () => {
 });
 
 btnExportPdf?.addEventListener("click", exportPdf);
+btnExportPdfDeck?.addEventListener("click", exportPdfDeck);
 
 btnApplyDeckChanges?.addEventListener("click", () => {
   try {
