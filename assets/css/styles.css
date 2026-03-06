@@ -189,6 +189,65 @@ body { margin: 0; }
   padding-left: 10px;
 }
 
+.toc-item{
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.toc-item > a{
+  flex: 1;
+}
+
+.toc-menu-btn{
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 6px;
+  margin-left: 6px;
+  color: #fff;
+  background: rgba(255,255,255,.08);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.toc-menu-btn:hover{
+  background: rgba(255,255,255,.16);
+}
+
+.toc-actions-menu{
+  position: absolute;
+  right: 0;
+  top: 30px;
+  z-index: 40;
+  display: none;
+  min-width: 122px;
+  border: 1px solid #d8c7d7;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(30, 14, 30, .2);
+  padding: 6px;
+}
+
+.toc-actions-menu.open{
+  display: block;
+}
+
+.toc-actions-menu > button{
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #4b3550;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.toc-actions-menu > button:hover{
+  background: #f6edf6;
+}
+
 .toc-icon{
   width: 16px;
   margin-right: 8px;

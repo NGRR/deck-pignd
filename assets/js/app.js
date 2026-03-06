@@ -290,11 +290,87 @@ function iconForLayout(layout=""){
   return map[layout] || "fa-regular fa-file-lines";
 }
 
+function uniqueSlideId(base = "slide"){
+  const cleanBase = String(base || "slide")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "slide";
+
+  const existing = new Set(currentDeck.slides.map(s => String(s?.id || "")));
+  if (!existing.has(cleanBase)) return cleanBase;
+
+  let n = 2;
+  while (existing.has(`${cleanBase}-${n}`)) {
+    n += 1;
+  }
+  return `${cleanBase}-${n}`;
+}
+
+function buildNewSlideFrom(sourceSlide){
+  const seed = sourceSlide || {};
+  return {
+    id: uniqueSlideId(seed.id || seed.title || "nueva-lamina"),
+    kicker: seed.kicker || "Nueva lamina",
+    title: `Nueva lamina (${seed.layout || "list"})`,
+    subtitle: "",
+    layout: seed.layout || "list",
+    bullets: ["Nuevo punto 1", "Nuevo punto 2"]
+  };
+}
+
+function insertSlideAt(targetIndex, where){
+  const source = currentDeck.slides[targetIndex] || null;
+  const freshSlide = buildNewSlideFrom(source);
+  const insertAt = where === "above" ? targetIndex : targetIndex + 1;
+
+  currentDeck.slides.splice(insertAt, 0, freshSlide);
+  idx = insertAt;
+  render();
+  void syncSave();
+}
+
+function deleteSlideAt(targetIndex){
+  if (currentDeck.slides.length <= 1) {
+    alert("No se puede borrar la ultima lamina.");
+    return;
+  }
+
+  const target = currentDeck.slides[targetIndex];
+  const ok = confirm(`¿Borrar la lamina \"${target?.title || "(sin titulo)"}\"?`);
+  if (!ok) return;
+
+  currentDeck.slides.splice(targetIndex, 1);
+  if (idx >= currentDeck.slides.length) {
+    idx = currentDeck.slides.length - 1;
+  } else if (idx > targetIndex) {
+    idx -= 1;
+  }
+
+  render();
+  void syncSave();
+}
+
+function closeTocMenus(){
+  elTOC.querySelectorAll(".toc-actions-menu.open").forEach(menu => {
+    menu.classList.remove("open");
+  });
+}
+
 function renderTOC(){
   const items = currentDeck.slides.map((s, i) => {
     const active = i === idx ? "uk-active" : "";
     const icon = iconForLayout(s.layout);
-    return `<li class="${active}"><a href="#${esc(s.id)}" data-idx="${i}"><i class="${icon} toc-icon" aria-hidden="true"></i>${esc(s.title)}</a></li>`;
+    return `
+      <li class="${active} toc-item">
+        <a href="#${esc(s.id)}" data-idx="${i}"><i class="${icon} toc-icon" aria-hidden="true"></i>${esc(s.title)}</a>
+        <button class="toc-menu-btn" type="button" data-menu-toggle="${i}" aria-label="Menu contextual">+</button>
+        <div class="toc-actions-menu" data-menu="${i}">
+          <button type="button" data-action="add-above" data-idx="${i}">+ Arriba</button>
+          <button type="button" data-action="add-below" data-idx="${i}">+ Abajo</button>
+          <button type="button" data-action="delete-slide" data-idx="${i}">Borrar</button>
+        </div>
+      </li>
+    `;
   }).join("");
 
   elTOC.innerHTML = `<ul class="uk-nav uk-nav-default">${items}</ul>`;
@@ -304,6 +380,37 @@ function renderTOC(){
       e.preventDefault();
       idx = Number(a.dataset.idx);
       render();
+    });
+  });
+
+  elTOC.querySelectorAll("[data-menu-toggle]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const menu = elTOC.querySelector(`[data-menu=\"${btn.dataset.menuToggle}\"]`);
+      if (!menu) return;
+
+      const wasOpen = menu.classList.contains("open");
+      closeTocMenus();
+      if (!wasOpen) {
+        menu.classList.add("open");
+      }
+    });
+  });
+
+  elTOC.querySelectorAll("[data-action]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const targetIndex = Number(btn.dataset.idx);
+      const action = btn.dataset.action;
+      closeTocMenus();
+
+      if (!Number.isInteger(targetIndex)) return;
+      if (action === "add-above") insertSlideAt(targetIndex, "above");
+      if (action === "add-below") insertSlideAt(targetIndex, "below");
+      if (action === "delete-slide") deleteSlideAt(targetIndex);
     });
   });
 }
@@ -973,6 +1080,12 @@ if (!hasUikitModal()) {
     });
   });
 }
+
+document.addEventListener("click", (e) => {
+  if (!elTOC.contains(e.target)) {
+    closeTocMenus();
+  }
+});
 
 window.addEventListener("keydown", (e) => {
   if (e.key === "ArrowLeft") prev();
