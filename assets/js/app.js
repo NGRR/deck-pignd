@@ -708,6 +708,11 @@ function importDeckFromFile(file){
 function renderObjectArrayEditor(label, key, items){
   if (!Array.isArray(items) || !items.length) return "";
 
+  const canAdd = key === "slide.cards";
+  const addBtn = canAdd
+    ? `<button type="button" class="uk-button uk-button-default uk-button-small" data-action="add-card">Agregar card</button>`
+    : "";
+
   const entries = items.map((item, i) => {
     if (!item || typeof item !== "object") return "";
 
@@ -720,7 +725,10 @@ function renderObjectArrayEditor(label, key, items){
 
     return `
       <div class="form-block">
-        <div class="form-block-title">${esc(label)} ${i + 1}</div>
+        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+          <div class="form-block-title uk-margin-remove">${esc(label)} ${i + 1}</div>
+          ${canAdd ? `<button type="button" class="uk-button uk-button-default uk-button-small" data-action="remove-card" data-index="${i}">Quitar</button>` : ""}
+        </div>
         ${fields}
       </div>
     `;
@@ -730,10 +738,41 @@ function renderObjectArrayEditor(label, key, items){
 
   return `
     <div class="form-block">
-      <div class="form-block-title">${esc(label)}</div>
+      <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+        <div class="form-block-title uk-margin-remove">${esc(label)}</div>
+        ${addBtn}
+      </div>
       ${entries}
     </div>
   `;
+}
+
+function bindSlideEditorActions(){
+  const addCardBtn = slideEditorForm.querySelector('[data-action="add-card"]');
+  addCardBtn?.addEventListener("click", () => {
+    const s = currentDeck.slides[idx];
+    if (!Array.isArray(s.cards)) {
+      s.cards = [];
+    }
+
+    s.cards.push({
+      title: `Nueva card ${s.cards.length + 1}`,
+      body: "Escribe aqui el contenido"
+    });
+
+    renderBasicSlideEditor();
+  });
+
+  slideEditorForm.querySelectorAll('[data-action="remove-card"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const s = currentDeck.slides[idx];
+      const i = Number(btn.dataset.index);
+      if (!Array.isArray(s.cards) || !Number.isInteger(i)) return;
+
+      s.cards.splice(i, 1);
+      renderBasicSlideEditor();
+    });
+  });
 }
 
 function renderBasicSlideEditor(){
@@ -793,6 +832,7 @@ function renderBasicSlideEditor(){
   sections.push(renderObjectArrayEditor("Segments", "slide.segments", s.segments));
 
   slideEditorForm.innerHTML = sections.filter(Boolean).join("");
+  bindSlideEditorActions();
 }
 
 function setPathValue(target, path, value){
