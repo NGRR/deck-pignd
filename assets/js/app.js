@@ -630,11 +630,18 @@ function layoutSplit(s){
 }
 
 function layoutQuote(s){
+  const hasQuote = Boolean(String(s.quote || "").trim());
+  const hasChips = Array.isArray(s.chips) && s.chips.length > 0;
+
+  if (!hasQuote && !hasChips) {
+    return `${headerBlock(s)}`;
+  }
+
   return `
     ${headerBlock(s)}
     <div class="uk-padding card-soft">
-      <div class="quote">${esc(s.quote || "")}</div>
-      ${(s.chips?.length ? `
+      ${hasQuote ? `<div class="quote">${esc(s.quote || "")}</div>` : ""}
+      ${(hasChips ? `
         <div class="uk-flex uk-flex-wrap uk-grid-small uk-margin-medium-top" uk-grid>
           ${s.chips.map(c => `<div><span class="badge"><span class="dot"></span>${esc(c)}</span></div>`).join("")}
         </div>
@@ -821,6 +828,55 @@ function fallbackBullets(s){
   `;
 }
 
+function fallbackSteps(s){
+  if (!Array.isArray(s.steps) || !s.steps.length) return "";
+  return `
+    <div class="uk-padding card-soft uk-margin-top">
+      <div class="uk-grid-small uk-child-width-1-2@m uk-text-small" uk-grid>
+        ${s.steps.map((step, i) => `
+          <div>
+            <div class="uk-text-muted">Paso ${i + 1}</div>
+            <div class="uk-text-bold uk-margin-small-top">${esc(step)}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function fallbackTiles(s){
+  if (!Array.isArray(s.tiles) || !s.tiles.length) return "";
+  return `
+    <div class="uk-child-width-1-2@m uk-grid-medium slide-grid uk-margin-top" uk-grid>
+      ${s.tiles.map(tile => `
+        <div>
+          <div class="uk-padding card-soft">
+            <div class="uk-text-bold">${esc(tile)}</div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function fallbackNoteRows(s){
+  if (!Array.isArray(s.noteRows) || !s.noteRows.length) return "";
+  return `
+    <div class="small-note uk-margin-top">
+      ${s.noteRows.map(x => `<div>${esc(x)}</div>`).join("")}
+    </div>
+  `;
+}
+
+function fallbackChips(s){
+  if (!Array.isArray(s.chips) || !s.chips.length) return "";
+  return `
+    <div class="uk-flex uk-flex-wrap uk-grid-small uk-margin-top" uk-grid>
+      ${s.chips.map(c => `<div><span class="badge"><span class="dot"></span>${esc(c)}</span></div>`).join("")}
+    </div>
+  `;
+}
+
 function layoutFallbackContent(s){
   const supports = {
     cards: ["twoCards", "threeCards", "quadrants", "threePillars"],
@@ -828,7 +884,11 @@ function layoutFallbackContent(s){
     rows: ["ranking"],
     tiers: ["tiers"],
     segments: ["stacked"],
-    bullets: ["list", "dashboard", "split", "pipeline"]
+    bullets: ["list", "dashboard", "split", "pipeline"],
+    steps: ["pipeline"],
+    tiles: ["tiles6", "tiles4"],
+    noteRows: ["ranking"],
+    chips: ["quote"]
   };
 
   const pieces = [];
@@ -838,6 +898,10 @@ function layoutFallbackContent(s){
   if (!supports.tiers.includes(s.layout)) pieces.push(fallbackTiers(s));
   if (!supports.segments.includes(s.layout)) pieces.push(fallbackSegments(s));
   if (!supports.bullets.includes(s.layout)) pieces.push(fallbackBullets(s));
+  if (!supports.steps.includes(s.layout)) pieces.push(fallbackSteps(s));
+  if (!supports.tiles.includes(s.layout)) pieces.push(fallbackTiles(s));
+  if (!supports.noteRows.includes(s.layout)) pieces.push(fallbackNoteRows(s));
+  if (!supports.chips.includes(s.layout)) pieces.push(fallbackChips(s));
 
   return pieces.filter(Boolean).join("");
 }
