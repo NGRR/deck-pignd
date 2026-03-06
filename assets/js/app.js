@@ -9,6 +9,7 @@ let remoteEnabled = false;
 let remoteBaseUrl = "";
 let remoteApiKey = "";
 let remoteRowId = "main";
+let hasLocalMutations = false;
 
 function hasUikitModal(){
   return Boolean(ui && typeof ui.modal === "function");
@@ -36,6 +37,10 @@ function closeModal(modalEl){
 
 function deepClone(value){
   return JSON.parse(JSON.stringify(value));
+}
+
+function markLocalMutation(){
+  hasLocalMutations = true;
 }
 
 const defaultDeck = deepClone(deck);
@@ -323,6 +328,7 @@ function insertSlideAt(targetIndex, where){
   const freshSlide = buildNewSlideFrom(source);
   const insertAt = where === "above" ? targetIndex : targetIndex + 1;
 
+  markLocalMutation();
   currentDeck.slides.splice(insertAt, 0, freshSlide);
   idx = insertAt;
   render();
@@ -338,6 +344,7 @@ function duplicateSlideAt(targetIndex){
   clone.title = `${source.title || "Lamina"} (copia)`;
 
   const insertAt = targetIndex + 1;
+  markLocalMutation();
   currentDeck.slides.splice(insertAt, 0, clone);
   idx = insertAt;
   render();
@@ -354,6 +361,7 @@ function deleteSlideAt(targetIndex){
   const ok = confirm(`¿Borrar la lamina \"${target?.title || "(sin titulo)"}\"?`);
   if (!ok) return;
 
+  markLocalMutation();
   currentDeck.slides.splice(targetIndex, 1);
   if (idx >= currentDeck.slides.length) {
     idx = currentDeck.slides.length - 1;
@@ -794,6 +802,7 @@ function applyDeck(nextDeck){
     return false;
   }
 
+  markLocalMutation();
   currentDeck = nextDeck;
   persistDeck();
   render();
@@ -1035,6 +1044,8 @@ function applyBasicSlideChanges(){
   const s = currentDeck.slides[idx];
   if (!s) return;
 
+  markLocalMutation();
+
   slideEditorForm.querySelectorAll("[data-key]").forEach(input => {
     const key = input.dataset.key || "";
     const kind = input.dataset.kind || "text";
@@ -1100,6 +1111,7 @@ btnRestoreDeck?.addEventListener("click", () => {
   const confirmed = confirm("Esto eliminara los cambios locales y restaurara el deck original. ¿Continuar?");
   if (!confirmed) return;
 
+  markLocalMutation();
   currentDeck = deepClone(defaultDeck);
   localStorage.removeItem(STORAGE_KEY);
   idx = 0;
@@ -1115,6 +1127,7 @@ btnImportDeck?.addEventListener("click", () => {
 
 fileImportDeck?.addEventListener("change", () => {
   const [file] = fileImportDeck.files || [];
+  if (file) markLocalMutation();
   importDeckFromFile(file);
   fileImportDeck.value = "";
 });
@@ -1161,7 +1174,7 @@ async function bootstrap(){
   if (remoteEnabled) {
     try {
       const remoteDeck = await fetchRemoteDeck();
-      if (isValidDeck(remoteDeck)) {
+      if (!hasLocalMutations && isValidDeck(remoteDeck)) {
         currentDeck = remoteDeck;
         persistDeck();
       }
