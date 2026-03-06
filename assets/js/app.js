@@ -1002,6 +1002,9 @@ function renderBasicSlideEditor(){
   sections.push(renderObjectArrayEditor("Segments", "slide.segments", s.segments));
 
   slideEditorForm.innerHTML = sections.filter(Boolean).join("");
+  slideEditorForm.querySelectorAll("[data-key]").forEach(input => {
+    input.dataset.initialValue = input.value ?? "";
+  });
   bindSlideEditorActions();
 }
 
@@ -1044,12 +1047,19 @@ function applyBasicSlideChanges(){
   const s = currentDeck.slides[idx];
   if (!s) return;
 
-  markLocalMutation();
+  let changed = false;
 
   slideEditorForm.querySelectorAll("[data-key]").forEach(input => {
     const key = input.dataset.key || "";
     const kind = input.dataset.kind || "text";
     const val = input.value ?? "";
+    const initialValue = input.dataset.initialValue ?? "";
+
+    if (val === initialValue) {
+      return;
+    }
+
+    changed = true;
 
     if (key === "deck.title") {
       currentDeck.title = String(val);
@@ -1065,6 +1075,12 @@ function applyBasicSlideChanges(){
       setPathValue(s, path, String(val));
     }
   });
+
+  if (!changed) {
+    return;
+  }
+
+  markLocalMutation();
 
   void syncSave();
   render();
