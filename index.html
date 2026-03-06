@@ -13,6 +13,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/uikit@3.21.16/dist/js/uikit.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/uikit@3.21.16/dist/js/uikit-icons.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <link rel="stylesheet" href="assets/css/styles.css" />
   <script type="module" defer src="assets/js/app.js"></script>
@@ -70,8 +72,6 @@
     <button id="btnImportDeck" class="uk-button uk-button-default uk-button-small" type="button">Importar</button>
     <span id="syncStatus" class="sync-status sync-local">Local</span>
   </div>
-
-  <section id="printDeck" class="print-deck" aria-hidden="true"></section>
 
   <input id="fileImportDeck" type="file" accept="application/json" hidden />
 

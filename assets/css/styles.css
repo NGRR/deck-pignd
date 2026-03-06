@@ -520,36 +520,6 @@ body { margin: 0; }
 .segC{ background: rgba(143,91,132,.82); }
 .segD{ background: rgba(225,205,223,.9); }
 
-.print-deck{
-  display: none;
-}
-
-.print-page{
-  page-break-after: always;
-  break-after: page;
-  padding: 0;
-  margin: 0;
-}
-
-.print-page:last-child{
-  page-break-after: auto;
-  break-after: auto;
-}
-
-.print-stage{
-  width: 100%;
-  min-height: 100%;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 14px;
-  background: #fff;
-}
-
-.print-meta{
-  font-size: 11px;
-  color: #6f5f73;
-  margin-bottom: 8px;
-}
 
 @media (max-width: 960px){
   .deck-topbar .uk-grid-small{
@@ -592,38 +562,3 @@ body { margin: 0; }
   }
 }
 
-@media print {
-  @page {
-    size: letter landscape;
-    margin: 0.5in;
-  }
-
-  html,
-  body {
-    height: auto;
-    background: #fff;
-  }
-
-  body.printing {
-    margin: 0;
-  }
-
-  body.printing .deck-body,
-  body.printing .deck-actions-bottom,
-  body.printing .deck-sidebar,
-  body.printing .deck-topbar,
-  body.printing .deck-footer,
-  body.printing .deck-stage-wrap,
-  body.printing .uk-modal,
-  body.printing #fileImportDeck {
-    display: none !important;
-  }
-
-  body.printing .print-deck {
-    display: block;
-  }
-
-  body.printing .print-stage .slide-shell {
-    min-height: 0;
-  }
-}
