@@ -98,6 +98,8 @@ const btnEditText = document.getElementById("btnEditText");
 const btnEditDeck = document.getElementById("btnEditDeck");
 const btnExportPdf = document.getElementById("btnExportPdf");
 const btnExportPdfDeck = document.getElementById("btnExportPdfDeck");
+const btnExportPpt = document.getElementById("btnExportPpt");
+const btnExportPptDeck = document.getElementById("btnExportPptDeck");
 const btnSaveDeck = document.getElementById("btnSaveDeck");
 const btnRestoreDeck = document.getElementById("btnRestoreDeck");
 const btnRestoreOriginal = document.getElementById("btnRestoreOriginal");
@@ -288,8 +290,12 @@ async function loadRemoteConfig(){
 
   if (!remoteConfig) {
     try {
-      const mod = await import("./remote-config.js");
-      remoteConfig = mod.remoteConfig || mod.default || null;
+      const remoteModuleUrl = new URL("./remote-config.js", import.meta.url).toString();
+      const probe = await fetch(remoteModuleUrl, { method: "GET", cache: "no-store" });
+      if (probe.ok) {
+        const mod = await import("./remote-config.js");
+        remoteConfig = mod.remoteConfig || mod.default || null;
+      }
     } catch {
       remoteConfig = null;
     }
@@ -1255,6 +1261,27 @@ async function ensurePdfLibraries(){
   }
 }
 
+async function ensurePptLibraries(){
+  if (!window.html2canvas) {
+    await loadExternalScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+  }
+
+  if (!window.PptxGenJS) {
+    await loadExternalScript("https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js");
+  }
+
+  if (!window.html2canvas || !window.PptxGenJS) {
+    throw new Error("Dependencias PPT no disponibles");
+  }
+}
+
+function setExportButtonsDisabled(disabled){
+  if (btnExportPdf) btnExportPdf.disabled = disabled;
+  if (btnExportPdfDeck) btnExportPdfDeck.disabled = disabled;
+  if (btnExportPpt) btnExportPpt.disabled = disabled;
+  if (btnExportPptDeck) btnExportPptDeck.disabled = disabled;
+}
+
 function canvasToImageData(canvas){
   try {
     return { data: canvas.toDataURL("image/jpeg", 0.96), format: "JPEG" };
@@ -1292,6 +1319,24 @@ async function captureSlideCanvas(slideData, tone){
       useCORS: true,
       logging: false
     });
+  } catch (error) {
+    const patternError = error instanceof Error && /createPattern|width or height of 0/i.test(error.message);
+    if (!patternError) {
+      throw error;
+    }
+
+    // Fallback: remove CSS background images in the cloned doc when html2canvas fails on invalid patterns.
+    return await html2canvasLib(captureRoot, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      onclone: (clonedDoc) => {
+        const style = clonedDoc.createElement("style");
+        style.textContent = "*{background-image:none !important;}";
+        clonedDoc.head.appendChild(style);
+      }
+    });
   } finally {
     captureRoot.remove();
   }
@@ -1302,8 +1347,7 @@ async function exportPdf(){
 
   const activeSlide = currentDeck.slides[idx] || {};
   const tone = idx % 2 === 0 ? "tone-primary" : "tone-secondary";
-  btnExportPdf.disabled = true;
-  if (btnExportPdfDeck) btnExportPdfDeck.disabled = true;
+  setExportButtonsDisabled(true);
 
   try {
     await ensurePdfLibraries();
@@ -1324,8 +1368,7 @@ async function exportPdf(){
     console.error("PDF export error (slide)", error);
     alert("No se pudo generar el PDF para esta lamina.");
   } finally {
-    btnExportPdf.disabled = false;
-    if (btnExportPdfDeck) btnExportPdfDeck.disabled = false;
+    setExportButtonsDisabled(false);
   }
 }
 
@@ -1337,8 +1380,7 @@ async function exportPdfDeck(){
     return;
   }
 
-  btnExportPdf.disabled = true;
-  if (btnExportPdfDeck) btnExportPdfDeck.disabled = true;
+  setExportButtonsDisabled(true);
 
   try {
     await ensurePdfLibraries();
@@ -1368,8 +1410,631 @@ async function exportPdfDeck(){
     console.error("PDF export error (deck)", error);
     alert("No se pudo generar el PDF completo del deck.");
   } finally {
-    btnExportPdf.disabled = false;
-    if (btnExportPdfDeck) btnExportPdfDeck.disabled = false;
+    setExportButtonsDisabled(false);
+  }
+}
+
+const PPT_W = 13.333;
+const PPT_H = 7.5;
+const PptPalette = {
+  bgPrimary: "FFFFFF",
+  bgSecondary: "FBF6FB",
+  card: "FDFAFD",
+  line: "E5D8E5",
+  text: "2E2130",
+  muted: "6F5F73",
+  accentA: "573751",
+  accentB: "6B4563",
+  accentC: "8F5B84"
+};
+
+const exportButtonState = new WeakMap();
+
+function beginButtonProgress(btn, baseLabel){
+  if (!btn) return;
+  exportButtonState.set(btn, {
+    text: btn.textContent,
+    bgImage: btn.style.backgroundImage,
+    bgSize: btn.style.backgroundSize,
+    bgRepeat: btn.style.backgroundRepeat,
+    bgPosition: btn.style.backgroundPosition
+  });
+
+  updateButtonProgress(btn, 0, baseLabel);
+}
+
+function updateButtonProgress(btn, ratio, baseLabel){
+  if (!btn) return;
+  const pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+  btn.style.backgroundImage = `linear-gradient(90deg, rgba(255,255,255,.32) 0%, rgba(255,255,255,.32) ${pct}%, rgba(255,255,255,0) ${pct}%, rgba(255,255,255,0) 100%)`;
+  btn.style.backgroundSize = "100% 100%";
+  btn.style.backgroundRepeat = "no-repeat";
+  btn.style.backgroundPosition = "left top";
+  btn.textContent = `${baseLabel} ${pct}%`;
+}
+
+function endButtonProgress(btn){
+  if (!btn) return;
+  const state = exportButtonState.get(btn);
+  if (!state) return;
+
+  btn.textContent = state.text;
+  btn.style.backgroundImage = state.bgImage;
+  btn.style.backgroundSize = state.bgSize;
+  btn.style.backgroundRepeat = state.bgRepeat;
+  btn.style.backgroundPosition = state.bgPosition;
+  exportButtonState.delete(btn);
+}
+
+function shapeType(ppt, name, fallback = "rect"){
+  return ppt.ShapeType?.[name] || ppt.ShapeType?.[fallback] || fallback;
+}
+
+function chartType(ppt, name, fallback = "bar"){
+  return ppt.ChartType?.[name] || ppt.ChartType?.[fallback] || fallback;
+}
+
+function asArray(value){
+  return Array.isArray(value) ? value : [];
+}
+
+function asText(value){
+  return String(value || "").trim();
+}
+
+function parseNumber(value){
+  const cleaned = String(value ?? "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace(/[^0-9.-]/g, "");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function addPptBox(ppt, slide, { x, y, w, h, title = "", body = "", titleSize = 14, bodySize = 11 }){
+  slide.addShape(shapeType(ppt, "rect"), {
+    x,
+    y,
+    w,
+    h,
+    line: { color: PptPalette.line, pt: 1 },
+    fill: { color: PptPalette.card }
+  });
+
+  if (asText(title)) {
+    slide.addText(asText(title), {
+      x: x + 0.2,
+      y: y + 0.14,
+      w: w - 0.4,
+      h: 0.3,
+      bold: true,
+      color: PptPalette.text,
+      fontSize: titleSize,
+      valign: "top"
+    });
+  }
+
+  if (asText(body)) {
+    slide.addText(asText(body), {
+      x: x + 0.2,
+      y: y + 0.48,
+      w: w - 0.4,
+      h: Math.max(0.5, h - 0.58),
+      color: PptPalette.muted,
+      fontSize: bodySize,
+      valign: "top",
+      fit: "shrink"
+    });
+  }
+}
+
+function addPptHeader(ppt, slide, data, tone){
+  const bg = tone === "tone-primary" ? PptPalette.bgPrimary : PptPalette.bgSecondary;
+  slide.addShape(shapeType(ppt, "rect"), {
+    x: 0,
+    y: 0,
+    w: PPT_W,
+    h: PPT_H,
+    line: { color: bg, pt: 0 },
+    fill: { color: bg }
+  });
+
+  slide.addShape(shapeType(ppt, "rect"), {
+    x: 0.5,
+    y: 0.24,
+    w: 3.8,
+    h: 0.3,
+    line: { color: PptPalette.accentA, pt: 0 },
+    fill: { color: PptPalette.accentA }
+  });
+
+  slide.addText("AREA DE ESTUDIOS Y CAPACITACION", {
+    x: 0.58,
+    y: 0.29,
+    w: 3.5,
+    h: 0.2,
+    fontSize: 8,
+    color: "FFFFFF",
+    bold: true,
+    valign: "mid"
+  });
+
+  if (asText(data.kicker)) {
+    slide.addText(asText(data.kicker), {
+      x: 0.52,
+      y: 0.62,
+      w: 9.5,
+      h: 0.24,
+      fontSize: 10,
+      color: PptPalette.accentA,
+      bold: true,
+      valign: "top"
+    });
+  }
+
+  const titleText = asText(data.title) || "(sin titulo)";
+  const markWidth = Math.max(2.4, Math.min(12.0, (titleText.length * 0.17) + 1.2));
+
+  // Emula el <mark> del titulo con fondo acento y texto claro.
+  slide.addShape(shapeType(ppt, "rect"), {
+    x: 0.5,
+    y: 0.88,
+    w: markWidth,
+    h: 0.72,
+    line: { color: PptPalette.accentA, pt: 0 },
+    fill: { color: PptPalette.accentA }
+  });
+
+  slide.addText(titleText, {
+    x: 0.62,
+    y: 0.96,
+    w: Math.max(2.2, markWidth - 0.24),
+    h: 0.56,
+    fontSize: 28,
+    bold: true,
+    color: "FFFFFF",
+    valign: "mid",
+    fit: "shrink"
+  });
+
+  let nextY = 1.82;
+  if (asText(data.subtitle)) {
+    slide.addText(asText(data.subtitle), {
+      x: 0.52,
+      y: 1.68,
+      w: 11.8,
+      h: 0.38,
+      fontSize: 12,
+      color: PptPalette.muted,
+      valign: "top",
+      fit: "shrink"
+    });
+    nextY = 2.08;
+  }
+
+  const badges = asArray(data.badges).slice(0, 6);
+  if (badges.length) {
+    let badgeX = 0.52;
+    let badgeY = nextY;
+    const badgeH = 0.28;
+    const gap = 0.1;
+    const maxX = 12.2;
+
+    badges.forEach(rawBadge => {
+      const badgeText = asText(rawBadge);
+      if (!badgeText) return;
+
+      const badgeW = Math.max(1.1, Math.min(3.1, (badgeText.length * 0.09) + 0.52));
+      if (badgeX + badgeW > maxX) {
+        badgeX = 0.52;
+        badgeY += badgeH + 0.08;
+      }
+
+      // Reproduce la estructura visual de badge + dot.
+      slide.addShape(shapeType(ppt, "rect"), {
+        x: badgeX,
+        y: badgeY,
+        w: badgeW,
+        h: badgeH,
+        line: { color: "E2D3E2", pt: 1 },
+        fill: { color: "FFF8FF" }
+      });
+
+      slide.addShape(shapeType(ppt, "rect"), {
+        x: badgeX + 0.1,
+        y: badgeY + 0.1,
+        w: 0.08,
+        h: 0.08,
+        line: { color: PptPalette.accentB, pt: 0 },
+        fill: { color: PptPalette.accentB }
+      });
+
+      slide.addText(badgeText, {
+        x: badgeX + 0.24,
+        y: badgeY + 0.06,
+        w: badgeW - 0.3,
+        h: 0.16,
+        fontSize: 9,
+        color: "5D4A5A",
+        valign: "mid",
+        fit: "shrink"
+      });
+
+      badgeX += badgeW + gap;
+    });
+
+    nextY = badgeY + badgeH + 0.08;
+  }
+
+  slide.addShape(shapeType(ppt, "line", "rect"), {
+    x: 0.5,
+    y: nextY,
+    w: 12.2,
+    h: 0,
+    line: { color: "D9CCD9", pt: 1 }
+  });
+
+  return nextY + 0.18;
+}
+
+function addPptCardsGrid(ppt, slide, cards, yStart, cols = 2){
+  const safeCards = asArray(cards);
+  if (!safeCards.length) return;
+
+  const x0 = 0.5;
+  const gap = 0.25;
+  const totalW = 12.2;
+  const w = (totalW - (gap * (cols - 1))) / cols;
+  const rows = Math.ceil(safeCards.length / cols);
+  const availableH = Math.max(1, PPT_H - yStart - 0.5);
+  const h = (availableH - (gap * (rows - 1))) / rows;
+
+  safeCards.forEach((card, i) => {
+    const row = Math.floor(i / cols);
+    const col = i % cols;
+    const x = x0 + col * (w + gap);
+    const y = yStart + row * (h + gap);
+    addPptBox(ppt, slide, {
+      x,
+      y,
+      w,
+      h,
+      title: card?.title || "",
+      body: card?.body || ""
+    });
+  });
+}
+
+function addPptBulletCard(ppt, slide, yStart, bullets, note = ""){
+  const bulletText = asArray(bullets).map(x => `- ${asText(x)}`).join("\n");
+  const body = [bulletText, asText(note)].filter(Boolean).join("\n\n");
+  addPptBox(ppt, slide, {
+    x: 0.5,
+    y: yStart,
+    w: 12.2,
+    h: Math.max(1.6, PPT_H - yStart - 0.5),
+    body,
+    bodySize: 13
+  });
+}
+
+function addDashboardChart(ppt, slide, kpis, yStart){
+  const labels = [];
+  const values = [];
+
+  asArray(kpis).forEach(k => {
+    const n = parseNumber(k?.value);
+    if (n != null) {
+      labels.push(asText(k?.label) || "KPI");
+      values.push(n);
+    }
+  });
+
+  if (labels.length < 2) return false;
+
+  slide.addChart(chartType(ppt, "bar"), [
+    { name: "Valores", labels, values }
+  ], {
+    x: 0.5,
+    y: yStart,
+    w: 8.2,
+    h: 2.3,
+    catAxisLabelSize: 9,
+    valAxisLabelSize: 9,
+    showLegend: false,
+    barDir: "col",
+    barGrouping: "clustered"
+  });
+
+  return true;
+}
+
+function addSegmentsChart(ppt, slide, segments, yStart){
+  const labels = [];
+  const values = [];
+
+  asArray(segments).forEach(seg => {
+    const n = parseNumber(seg?.value);
+    if (n != null && n > 0) {
+      labels.push(asText(seg?.label) || "Segmento");
+      values.push(n);
+    }
+  });
+
+  if (!labels.length) return false;
+
+  slide.addChart(chartType(ppt, "pie"), [
+    { name: "Distribucion", labels, values }
+  ], {
+    x: 0.6,
+    y: yStart,
+    w: 6.2,
+    h: 3.2,
+    showLegend: true,
+    legendPos: "r",
+    dataLabelPosition: "bestFit"
+  });
+
+  return true;
+}
+
+function addPptSlideFromData(ppt, data, tone){
+  const slide = ppt.addSlide();
+  const contentY = addPptHeader(ppt, slide, data, tone);
+  const layout = asText(data.layout);
+
+  if (layout === "cover") {
+    return;
+  }
+
+  if (layout === "list") {
+    addPptBulletCard(ppt, slide, contentY, data.bullets, data.note);
+    return;
+  }
+
+  if (["twoCards", "quadrants", "split"].includes(layout)) {
+    const cards = layout === "split"
+      ? [
+        { title: data?.left?.title || "", body: asArray(data?.left?.bullets).map(x => `- ${x}`).join("\n") },
+        { title: data?.right?.title || "", body: asArray(data?.right?.bullets).map(x => `- ${x}`).join("\n") }
+      ]
+      : asArray(data.cards);
+    addPptCardsGrid(ppt, slide, cards, contentY, 2);
+    return;
+  }
+
+  if (["threeCards", "threePillars", "tiers"].includes(layout)) {
+    const source = layout === "tiers" ? asArray(data.tiers) : asArray(data.cards);
+    addPptCardsGrid(ppt, slide, source, contentY, 3);
+    return;
+  }
+
+  if (layout === "pipeline") {
+    const steps = asArray(data.steps).map((s, i) => ({ title: `Paso ${i + 1}`, body: asText(s) }));
+    addPptCardsGrid(ppt, slide, steps, contentY, 5);
+    return;
+  }
+
+  if (layout === "dashboard") {
+    const kpis = asArray(data.kpis);
+    addPptCardsGrid(ppt, slide, kpis.map(k => ({
+      title: k?.label || "",
+      body: [asText(k?.value), asText(k?.note)].filter(Boolean).join("\n")
+    })), contentY, 3);
+
+    const chartY = contentY + 1.72;
+    const hasChart = addDashboardChart(ppt, slide, kpis, chartY);
+    const bullets = asArray(data.bullets);
+    if (bullets.length) {
+      const x = hasChart ? 8.9 : 0.5;
+      const w = hasChart ? 3.8 : 12.2;
+      addPptBox(ppt, slide, {
+        x,
+        y: chartY,
+        w,
+        h: 2.3,
+        title: "Puntos clave",
+        body: bullets.map(xb => `- ${asText(xb)}`).join("\n"),
+        bodySize: 11
+      });
+    }
+    return;
+  }
+
+  if (layout === "quote") {
+    addPptBox(ppt, slide, {
+      x: 0.5,
+      y: contentY,
+      w: 12.2,
+      h: 2.2,
+      title: "Cita",
+      body: asText(data.quote),
+      bodySize: 18
+    });
+
+    const chips = asArray(data.chips);
+    if (chips.length) {
+      slide.addText(chips.map(x => `[${asText(x)}]`).join(" "), {
+        x: 0.6,
+        y: contentY + 2.35,
+        w: 11.8,
+        h: 0.3,
+        fontSize: 11,
+        color: PptPalette.accentB,
+        fit: "shrink"
+      });
+    }
+    return;
+  }
+
+  if (layout === "ranking") {
+    addPptBox(ppt, slide, {
+      x: 0.5,
+      y: contentY,
+      w: 12.2,
+      h: 3.5,
+      title: "Ranking",
+      body: asArray(data.rows).map(r => `${asText(r?.label)} : ${asText(r?.value)}`).join("\n")
+    });
+
+    const notes = asArray(data.noteRows);
+    if (notes.length) {
+      slide.addText(notes.map(x => `- ${asText(x)}`).join("\n"), {
+        x: 0.6,
+        y: contentY + 3.65,
+        w: 11.8,
+        h: 0.9,
+        color: PptPalette.muted,
+        fontSize: 10,
+        fit: "shrink"
+      });
+    }
+    return;
+  }
+
+  if (layout === "tiles6") {
+    addPptCardsGrid(ppt, slide, asArray(data.tiles).map(t => ({ title: asText(t), body: "" })), contentY, 3);
+    return;
+  }
+
+  if (layout === "tiles4") {
+    addPptCardsGrid(ppt, slide, asArray(data.tiles).map(t => ({ title: asText(t), body: "" })), contentY, 2);
+    return;
+  }
+
+  if (layout === "stacked") {
+    if (asText(data.kpiTop)) {
+      slide.addText(asText(data.kpiTop), {
+        x: 0.6,
+        y: contentY,
+        w: 6,
+        h: 0.3,
+        fontSize: 14,
+        bold: true,
+        color: PptPalette.text
+      });
+    }
+
+    const chartY = contentY + 0.35;
+    const hasChart = addSegmentsChart(ppt, slide, data.segments, chartY);
+    if (!hasChart) {
+      addPptBox(ppt, slide, {
+        x: 0.6,
+        y: chartY,
+        w: 6.2,
+        h: 3,
+        title: "Segmentos",
+        body: asArray(data.segments).map(seg => `${asText(seg?.label)}: ${asText(seg?.value)}`).join("\n")
+      });
+    }
+
+    if (asText(data.kpiBottom)) {
+      slide.addText(asText(data.kpiBottom), {
+        x: 0.6,
+        y: 6.2,
+        w: 11.8,
+        h: 0.4,
+        fontSize: 11,
+        color: PptPalette.muted
+      });
+    }
+    return;
+  }
+
+  // Fallback full-text for unknown layouts.
+  addPptBox(ppt, slide, {
+    x: 0.5,
+    y: contentY,
+    w: 12.2,
+    h: 4.6,
+    title: "Contenido",
+    body: JSON.stringify(data, null, 2),
+    bodySize: 9
+  });
+}
+
+async function exportPpt(){
+  const activeSlide = currentDeck.slides[idx] || {};
+  const tone = idx % 2 === 0 ? "tone-primary" : "tone-secondary";
+  const progressLabel = "PPT";
+
+  setExportButtonsDisabled(true);
+  beginButtonProgress(btnExportPpt, progressLabel);
+
+  try {
+    updateButtonProgress(btnExportPpt, 0.08, progressLabel);
+    await ensurePptLibraries();
+    updateButtonProgress(btnExportPpt, 0.25, progressLabel);
+
+    const ppt = new window.PptxGenJS();
+    ppt.layout = "LAYOUT_WIDE";
+    ppt.author = "Deck UIkit";
+    ppt.subject = currentDeck.title || "Deck";
+    ppt.title = activeSlide.title || currentDeck.title || "Deck";
+
+    addPptSlideFromData(ppt, activeSlide, tone);
+    updateButtonProgress(btnExportPpt, 0.75, progressLabel);
+
+    const safeTitle = String(activeSlide.title || "lamina")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "lamina";
+
+    await ppt.writeFile({ fileName: `${safeTitle}.pptx` });
+    updateButtonProgress(btnExportPpt, 1, progressLabel);
+  } catch (error) {
+    console.error("PPT export error (slide)", error);
+    alert("No se pudo generar el PPT para esta lamina.");
+  } finally {
+    endButtonProgress(btnExportPpt);
+    setExportButtonsDisabled(false);
+  }
+}
+
+async function exportPptDeck(){
+  if (!Array.isArray(currentDeck.slides) || !currentDeck.slides.length) {
+    alert("No hay laminas para exportar.");
+    return;
+  }
+
+  const progressLabel = "PPT deck";
+  setExportButtonsDisabled(true);
+  beginButtonProgress(btnExportPptDeck, progressLabel);
+
+  try {
+    updateButtonProgress(btnExportPptDeck, 0.05, progressLabel);
+    await ensurePptLibraries();
+    updateButtonProgress(btnExportPptDeck, 0.12, progressLabel);
+
+    const ppt = new window.PptxGenJS();
+    ppt.layout = "LAYOUT_WIDE";
+    ppt.author = "Deck UIkit";
+    ppt.subject = currentDeck.title || "Deck";
+    ppt.title = currentDeck.title || "Deck";
+
+    const total = currentDeck.slides.length;
+    for (let i = 0; i < total; i++) {
+      const s = currentDeck.slides[i] || {};
+      const tone = i % 2 === 0 ? "tone-primary" : "tone-secondary";
+      addPptSlideFromData(ppt, s, tone);
+      const ratio = 0.12 + ((i + 1) / total) * 0.78;
+      updateButtonProgress(btnExportPptDeck, ratio, progressLabel);
+    }
+
+    const safeDeckTitle = String(currentDeck.title || "deck")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "deck";
+
+    updateButtonProgress(btnExportPptDeck, 0.94, progressLabel);
+    await ppt.writeFile({ fileName: `${safeDeckTitle}-deck.pptx` });
+    updateButtonProgress(btnExportPptDeck, 1, progressLabel);
+  } catch (error) {
+    console.error("PPT export error (deck)", error);
+    alert("No se pudo generar el PPT completo del deck.");
+  } finally {
+    endButtonProgress(btnExportPptDeck);
+    setExportButtonsDisabled(false);
   }
 }
 
@@ -1654,6 +2319,8 @@ btnEditDeck?.addEventListener("click", () => {
 
 btnExportPdf?.addEventListener("click", exportPdf);
 btnExportPdfDeck?.addEventListener("click", exportPdfDeck);
+btnExportPpt?.addEventListener("click", exportPpt);
+btnExportPptDeck?.addEventListener("click", exportPptDeck);
 
 btnApplyDeckChanges?.addEventListener("click", () => {
   try {

@@ -574,3 +574,8 @@ body { margin: 0; }
   }
 }
 
+/* Global hard override requested: no rounded corners anywhere. */
+*, *::before, *::after{
+  border-radius: 0 !important;
+}
+
