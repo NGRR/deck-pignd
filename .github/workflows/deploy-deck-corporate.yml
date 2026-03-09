@@ -1,0 +1,30 @@
+name: Deploy Deck Corporate
+
+on:
+  push:
+    branches:
+      - feature/corporate-landing-lineamiento
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deck-corporate
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish preview path
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          publish_branch: gh-pages
+          destination_dir: previews/01-corporate
+          keep_files: true
