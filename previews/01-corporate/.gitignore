@@ -1,0 +1,13 @@
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Local env
+.env
+assets/js/remote-config.js
+
+# Node/Python leftovers
+node_modules/
+__pycache__/
+*.pyc
