@@ -29,16 +29,8 @@ jobs:
         run: |
           set -e
           mkdir -p _site/previews/01-corporate
-          rsync -av --delete \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='_site/' \
-            ./ _site/
-          rsync -av --delete \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='_site/' \
-            ./ _site/previews/01-corporate/
+          git archive --format=tar HEAD | tar -xf - -C _site
+          git archive --format=tar HEAD | tar -xf - -C _site/previews/01-corporate
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
